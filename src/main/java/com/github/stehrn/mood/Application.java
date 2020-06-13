@@ -8,7 +8,6 @@ import org.springframework.data.map.repository.config.EnableMapRepositories;
 
 @SpringBootApplication
 @EnableAutoConfiguration
-@EnableMapRepositories
 @Slf4j
 public class Application {
 

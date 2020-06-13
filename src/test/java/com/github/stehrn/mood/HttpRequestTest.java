@@ -11,7 +11,7 @@ import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = TestRedisConfiguration.class, webEnvironment = WebEnvironment.RANDOM_PORT)
 public class HttpRequestTest {
 
     @LocalServerPort

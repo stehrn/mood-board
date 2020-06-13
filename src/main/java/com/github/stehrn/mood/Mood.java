@@ -2,11 +2,11 @@ package com.github.stehrn.mood;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.keyvalue.annotation.KeySpace;
+import org.springframework.data.redis.core.RedisHash;
 
 import java.io.Serializable;
 
-@KeySpace("moods")
+@RedisHash("user")
 @AllArgsConstructor
 @Data
 @Builder
