@@ -27,7 +27,10 @@ spec:
             - name: spring.redis.host
               value: "mood-redis"
             - name: mood_not_found_message
-              value: "default for Kubernetes"
+              valueFrom:
+                configMapKeyRef:
+                  name: mood-service-config
+                  key: mood_not_found_message
 ---
 apiVersion: v1
 kind: Service
