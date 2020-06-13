@@ -86,7 +86,7 @@ private String moodNotFoundMessage;
 ```
 Right now it appears it's hard coded in the properties file, to change the value requires a rebuild of the app. But what if we wanted to have different configurations based on the deployment environment (e.g. development/test/production or some other variant)?     
 
-We're in luck, Spring Boot will detect _environment variables_ (treating them as properties), we just need to `export` the value before starting the process:
+We're in luck, Spring Boot will detect _environment variables_ (treating them as properties), we just need to `export` the value before starting the process, kill the running app and then:
  ```cmd
 $ export mood_not_found_message="no mood from environment"
 $ mvn spring-boot:run
