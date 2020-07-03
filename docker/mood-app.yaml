@@ -4,7 +4,7 @@ metadata:
   name: mood-service
   namespace: default
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: service
@@ -28,6 +28,12 @@ spec:
               value: "mood-redis"
             - name: mood_not_found_message
               value: "default for Kubernetes"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
