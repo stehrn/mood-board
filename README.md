@@ -4,14 +4,56 @@ This is a practical look at [12 factor](https://12factor.net) apps and how to en
 
 A simple Java microservice is evolved architecturally, from a single process app, to a multi process [Docker](https://www.docker.com) containerised app leveraging a [redis](https://redis.io) cache, first running on the container orchestration platform [Kubernetes](https://kubernetes.io), and then rolled out to Red Hat [OpenShift](https://www.openshift.com).
 
-Its hands-on-keyboard, with exercises to work through, technical prerequisites:
+It's hands-on-keyboard, with exercises to work through, technical prerequisites:
 * JDK and maven are installed (along with a decent IDE like [IntelliJ](https://www.jetbrains.com/idea/))
 * Docker is [installed](https://docs.docker.com/get-docker/)
 
-Take a bit of time up-front to read the introductions to Docker containers and Kubernetes, whilst lots of links to more specifics are scattered throughout the blog.    
+Take a bit of time up-front to read the introductions to Docker containers and Kubernetes, whilst lots of links to more specifics are scattered throughout the blog. Here's what we'll be looking at:    
+
+* Introducing the mood service
+* Dependencies
+  * Libraries
+* Codebase
+  * What to do with shared code
+  * Versions
+* Config
+* Process and State
+  * Running redis on docker
+  * Connecting Spring Boot to redis
+  * Sidebar: Back to redis-cli to check contents of store
+  * Sidebar: Cache and persistence
+* Backing Services 
+* Containers and dependencies
+* Running the (mood app) service on docker
+   * Retrofit redis container so service container can connect to it
+   * Create and run service container
+* Port binding
+  * Publish versus expose
+* Declaring dependencies to other services
+* Running on Kubernetes
+  * Web Dashboard
+* Orchestration and process execution
+  * Defining resources available to a process
+  * Making sure a process stays healthy
+  * Using health checks
+* Concurrency 
+  * Horizontal Autoscaling
+* Config and Kubernetes
+* Deploying to Red Hat OpenShift
+* Wrap up
+  * 12 factor best practice
+   * Codebase
+   * Dependencies
+   * Config
+   * Process and state
+   * Backing service
+   * Port binding
+   * Orchestration and process execution
+ * Other factors
+
 
 ## Introducing the mood service
-The mood service is the beginnings of a simple agile scrum _moodboard_, its a middle tier that exposes the following RESTful end-points to set and get the mood of the given user:
+The mood service is the beginnings of a simple agile scrum _moodboard_, it's a middle tier that exposes the following RESTful end-points to set and get the mood of the given user:
 ```
 PUT /mood/user/<user> <mood>
 GET /mood/user/<user>
@@ -42,7 +84,7 @@ Now bring up the service:
 $ mvn spring-boot:run
 ```
 
-In a separate terminal, set mood for a user (`stehrn`) and retrieve:
+In a separate terminal, use `curl` to set mood for a user (`stehrn`) and retrieve:
 ```cmd
 $ curl -X PUT -H "Content-Type: text/plain" -d "happy" http://localhost:8080/mood/user/stehrn 
 $ curl http://localhost:8080/mood/user/stehrn
@@ -81,7 +123,7 @@ Given this is a small demo app, no code is shared yet, but if it was, then time 
 The shared library will have it's own build and release process, allowing the library and applications dependant on the library to evolve at their own pace. This is all about reducing the risk of breaking something in the library clients and will generally save time in the long run. Just be aware the code been refactored out should have a different velocity of change unrelated to the app - if the app and library are frequently released together then they're too coupled and probably should not have been separated.
 
 #### Versions 
-Use [git-flow](https://nvie.com/posts/a-successful-git-branching-model/) and [feature branches](https://martinfowler.com/bliki/FeatureBranch.html) to support different versions of the app in the same repo. The demo project makes use of feature branches to demonstrate some of the enhancements (normally feature branches would be merged back to master and deleted to keep things trim).          
+Use [git-flow](https://nvie.com/posts/a-successful-git-branching-model/) and [feature branches](https://martinfowler.com/bliki/FeatureBranch.html) to support different versions of the app in the same repo. The demo project makes use of feature branches to demonstrate some of the enhancements (normally feature branches would be merged back to master and deleted to keep things trim). To see what rmeote branches are available:          
 
 ```cmd
 $ git branch -r
@@ -92,7 +134,7 @@ $ git branch -r
 ## Config 
 [store config in the environment (not in the code)](https://12factor.net/config) (12 factor)
 
-The initial version the the service has a bit of config defined in [application.properties](src/main/resources/application.properties) to set the HTTP not found/404 message when no mood is set for user: 
+The initial version the the service has a bit of config defined in (Spring Boots) [application.properties](src/main/resources/application.properties) to set the HTTP not found/404 message when no mood is set for user: 
 ```
 mood_not_found_message=no mood
 ```
@@ -121,7 +163,7 @@ State exists in the mood service, in the form of a simple in-process cache. If w
 
 So how to get state out of the service process? The answer is to introduce a [backing service](https://12factor.net/backing-services) and store state there instead, backing services gets it's own section below, for now you just need to know it's any type of service the application consumes as part of it's normal operation and is typically defined via a simple 'connection string' (think URL).  
 
-Lets choose a distributed cache - [redis](https://redis.io) is a good choice (alternatives might include Hazelcast or memcached), its an opensource project with a strong community, described as "an in-memory data structure store, used as a database, cache and message broker ... supports data structures such as strings, hashes, lists, sets, ..." ([redis.io](https://redis.io)). 
+Lets choose a distributed cache - [redis](https://redis.io) is a good choice (alternatives might include Hazelcast or memcached), it's an opensource project with a strong community, described as "an in-memory data structure store, used as a database, cache and message broker ... supports data structures such as strings, hashes, lists, sets, ..." ([redis.io](https://redis.io)). 
 
 #### Running redis on docker
 One of the quickest and easiest way to install and run redis is using docker, the [run](https://docs.docker.com/engine/reference/commandline/run/) command starts the redis container:
@@ -148,7 +190,7 @@ Lets replace the existing in-memory cache with a redis cache using [Spring Data 
 
 Go back to terminal the app is running in and stop it, and fast forward to version of the app that has redis configured: 
 ```cmd
-$ git checkout master
+$ git checkout redis_container_cache
 $ mvn clean package
 ```
 
@@ -218,6 +260,11 @@ See all users:
 1) "stehrn"
 ``` 
 
+#### Sidebar: Cache and persistence 
+As-is, we have an ephemeral data cache - when the container is bounced the data will be lost. If we need a persistent store, we could consider [redis persistence](https://redis.io/topics/persistence), or make use of some the redis High Availability (HA) features (this [Highly available Redis Architecture](https://medium.com/kokster/highly-available-redis-architecture-613c89f887b4) medium article gives a good overview). 
+
+Alternatively, we could switch to using a database, which is outside of scope of article, but similar in approach to setting up redis - spin up a database container image (with a [volume](https://docs.docker.com/storage/volumes/)) and add code and config to connect.  
+
 ## Backing Services  
 [treat backing services as attached resources](https://12factor.net/backing-services) (12 factor)
 
@@ -248,8 +295,8 @@ We've seen this first hand with the redis container - the image had _everything_
 
 What extra dependencies does the mood service have? Well, there's a system library dependency on the Java 1.8 runtime (JDK). So lets ship the app inside a container so we have 100% certainty it has everything that's needed for it to run as expected, regardless of the runtime environment - the container been run and tested on a dev blade should work just the same way on a production cluster.  
  
-## Running the service on docker
-The redis container needs a bit of a retrofit first since we're now in the world of inter-container communication (networking) and need to configure things so the containers can communicate with each other.   
+## Running the (mood app) service on docker
+Before we can run the mood app in a container, the redis container needs a bit of a retrofit first since we're now in the world of inter-container communication (networking).   
 
 #### Retrofit redis container so service container can connect to it
 Lets make use of a user defined [bridge network](https://docs.docker.com/network/bridge/), it's good security practice as ensures only related services/containers can communicate with each other.
@@ -346,7 +393,7 @@ $ curl http://localhost:8085/mood/user/stehrn
 ```
 Remove running container with `docker rm --force mood-service-ports`
 
-So far we've been playing about in terminals using _localhost_, but in a UAT or production deployment, a public facing hostname and port will be used with some routing to route requests onto a server process listening on a non public host/port - we'll see this in action when we deploy to Openshift.
+So far we've been playing about in terminals using _localhost_, but in a UAT or production deployment, a public facing hostname and port will be used with some routing to route requests onto a server process listening on a non public host/port - we'll see this in action when we deploy to OpenShift.
 
 ### Publish versus expose
 It's worth taking a step back and thinking about how we're currently connecting to the redis process - the service container is connecting to the redis container - i.e. container to container communication, so instead of publishing the redis port to the outside world we just need to expose it to the other container, this is safer from a security perspective, so lets kill the existing container and start with [`expose`](https://docs.docker.com/engine/reference/commandline/run/#publish-or-expose-port--p---expose) instead of `publish`:  
@@ -363,9 +410,9 @@ The service depends on the redis cache - how to ensure it's running and availabl
 
 How we define the service and redis cache depends on how the application is architected. The simplest of distributed system patterns is the _single node_ pattern - defined as groups of containers co-located on a single machine; there are good use cases for this pattern - the [sidecar](https://docs.microsoft.com/en-us/azure/architecture/patterns/sidecar) pattern is a good example. 
 
-Do we want to run a cache on the same node/host as the service itself? Kubernetes allows each container to have its own guarantees around resource (CPU/memory) availability, but they'd still be on the same node, which raises concerns around availability - if the node goes down, everything goes down. Another concern is scalability, we can't easily scale if the containers are deployed together. Reliability, scalability and separation of concerns dictate that the application should be built out across multiple nodes - a _multi node_ pattern, and this is what we'll do. 
+Do we want to run a cache on the same node/host as the service it'self? Kubernetes allows each container to have it's own guarantees around resource (CPU/memory) availability, but they'd still be on the same node, which raises concerns around availability - if the node goes down, everything goes down. Another concern is scalability, we can't easily scale if the containers are deployed together. Reliability, scalability and separation of concerns dictate that the application should be built out across multiple nodes - a _multi node_ pattern, and this is what we'll do. 
    
-## Running application on Kubernetes
+## Running on Kubernetes
 Lets look at running the service and redis containers on Kubernetes. Before proceeding, kill off anything that's running either in your terminals or in background on docker, that's legacy now, we're moving on up to container orchestration!
 
 Docker Desktop includes a standalone [Kubernetes server](https://docs.docker.com/get-started/orchestration/) that runs on your machine, we're going to use this and the `kubectl` (pronounced “cube CTL”, “kube control”) command line interface to run commands against Kubernetes. 
@@ -381,9 +428,7 @@ All Kubernetes objects can be defined in YAML files, [mood-app.yaml](docker/mood
 
 .. and a similar set of objects for the mood service:
 * Deployment of mood service using `mood-service:1.0.0` image
-* [NodePort service](https://kubernetes.io/docs/concepts/services-networking/service/#nodeport), which will route traffic from port 8080 on the host to port 8080 inside the pods it routes to
-
-TODO: port is actually 30001
+* [LoadBalancer service](https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer), which will direct traffic to the backend Pods (on port 8080)
 
 Lets deploy the application to Kubernetes:
 ```cmd
@@ -405,13 +450,13 @@ $ kubectl logs -l app=service --follow
 
 Once again test the service (note different port):
 ```cmd 
-$ curl -X PUT -H "Content-Type: text/plain" -d "happy with Kubernetes" http://localhost:30001/mood/user/stehrn 
-$ curl http://localhost:30001/mood/user/stehrn
+$ curl -X PUT -H "Content-Type: text/plain" -d "happy with Kubernetes" http://localhost:8080/mood/user/stehrn 
+$ curl http://localhost:8080/mood/user/stehrn
 {"user":"stehrn","mood":"happy with Kubernetes"}
 ```
 
 ### Web Dashboard
-A nice feature of Kubernetes is the [web-ui-dashboard](https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/), its easy to install:
+A nice feature of Kubernetes is the [web-ui-dashboard](https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/), it's easy to install:
 ```cmd
 $ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0/aio/deploy/recommended.yaml
 ```
@@ -437,7 +482,7 @@ Process and state has already been handled, making it much simpler to spin up th
 ### Defining resources available to a process
 Kubernetes provides a few more features to enable the reliable execution of the container process by allowing the definition of memory and CPU resource requirements - we want the container to have enough resources to actually run!
 
-The following [requests and limits](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits) were set on the service container to tell Kubernetes how much CPU and memory we expect the application to use. 
+The following [requests and limit's](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limit's) were set on the service container to tell Kubernetes how much CPU and memory we expect the application to use. 
 ```cmd
       containers:
         - name: mood-service
@@ -446,7 +491,7 @@ The following [requests and limits](https://kubernetes.io/docs/concepts/configur
             requests:
               cpu: 500m
               memory: 512Mi
-            limits:
+            limit's:
               cpu: 800m
               memory: 1Gi
 ``` 
@@ -454,15 +499,13 @@ The following [requests and limits](https://kubernetes.io/docs/concepts/configur
 
 The _resource request_ is used by Kubernetes to decide which node to place the Pod on, one that has these resources available (it also uses this information to do some clever packing of processes on the cluster to ensure workloads are spread evenly).   
 
-The _resource limit_ is enforced, the running container is not allowed to use more of that resource than set by the limit, ensuring a badly behaved process (e.g. hogging 100% CPU) does not impact other processes on the cluster. Limits should be set such that they are only reached in exceptional circumstances - e.g. to kill off a process that might have a memory leak. 
+The _resource limit_ is enforced, the running container is not allowed to use more of that resource than set by the limit, ensuring a badly behaved process (e.g. hogging 100% CPU) does not impact other processes on the cluster. Limit's should be set such that they are only reached in exceptional circumstances - e.g. to kill off a process that might have a memory leak. 
  
 Set the CPU limit too low and Kubernetes will soon start throttling the container (CPU will be artificially restricted) giving impression the application is performing really badly!      
 
 The config for the mood-service container is stating we want the container to run on a node that can provide ~0.5 GB of memory and access to 50% of the CPU time, and to kill the container if it uses more than 1GB of memory and throttle it if CPU usage rises above 80%.
 
-Check out this good [google gcp article](https://cloud.google.com/blog/products/gcp/kubernetes-best-practices-resource-requests-and-limits) on resource request best practice. 
- 
-TODO: from here
+Check out this good [google gcp article](https://cloud.google.com/blog/products/gcp/kubernetes-best-practices-resource-requests-and-limit's) on resource request best practice. 
  
 ### Making sure a process stays healthy  
 Kubernetes has a _control plane_ that automatically ensures the desired container topology is maintained - e.g. if a container crashes it will spin it up again. Lets put that to the test..  
@@ -476,18 +519,18 @@ $ kubectl get pod --selector=app=service
 NAME                  READY   STATUS    RESTARTS   AGE
 mood-service-n7xhd    1/1     Running   0          101m
 ```
-Note RESTARTS is 0, we brought it up earlier and its continued running happily since.
+Note `RESTARTS` is 0, we brought it up earlier and it's continued running happily since.
 
-Lets now simulate the process crashing. Under the hood kubernetes spins up containers using Docker, so lets go back to using the Docker CLI to stop the running container:
+Lets now simulate the process crashing - under the hood kubernetes spins up containers using Docker, so lets go back to using the Docker CLI to stop the running container:
 ```cmd
 $ export MOOD_SERVICE_CONTAINER_ID=$(docker ps -q -f name=mood-service)
 $ docker stop $MOOD_SERVICE_CONTAINER_ID 
 ```
-Right now the service is down, if someone tried it, it would fail, lets give Kubernetes a chance to detect the outage and spin up a new container...then check on the pod again:
+Right now the service is down, if you tried it, it would fail, lets give Kubernetes a chance to detect the outage and automatically spin up a new container...then check on the pod again:
 ```cmd
 $ kubectl get pod --selector=app=service
 ```   
-..this time, as expected, its `RESTART` count has gone up:
+..this time, as expected, it's `RESTART` count has gone up:
 ```
 NAME                  READY   STATUS    RESTARTS   AGE
 mood-service-n7xhd    1/1     Running   1          106m
@@ -501,10 +544,10 @@ $ kubectl get events
 ..which will show something like below, with a warning about the failed container followed by events to bring it up again. 
 ```batch
 LAST SEEN   TYPE      REASON         OBJECT                   MESSAGE
-6s          Normal    Pulled         pod/mood-service-n7xhd   Container image "mood-service:1.0.0" already present on machine
-6s          Normal    Created        pod/mood-service-n7xhd   Created container mood-service
-6s          Normal    Started        pod/mood-service-n7xhd   Started container mood-service
 19s         Warning   BackOff        pod/mood-service-n7xhd   Back-off restarting failed container
+7s          Normal    Pulled         pod/mood-service-n7xhd   Container image "mood-service:1.0.0" already present on machine
+6s          Normal    Created        pod/mood-service-n7xhd   Created container mood-service
+5s          Normal    Started        pod/mood-service-n7xhd   Started container mood-service
 ```
 
 ### Using health checks 
@@ -519,10 +562,10 @@ The service is configured to expose an HTTP probe using [Spring Boot Actuator](h
 ``` 
 Actuator is clever enough to figure out we need redis and runs a health check to ensure we can connect. The health probe can be accessed via:
 ```cmd
-$ curl http://localhost:30001/actuator/health
+$ curl http://localhost:8080/actuator/health
 {"status":"UP"}
 ```
-This below bit of deployment config defines an HTTP request based liveness check, it informs Kubernetes to wait 30 seconds (`initialDelaySeconds`) before performing the first probe, and then perform the probe every 30 seconds (`periodSeconds`); if the probe fails 3 times (default `failureThreshold`) the container is restarted. 
+The below bit of deployment config defines an HTTP request based liveness check, it informs Kubernetes to wait 15 seconds (`initialDelaySeconds`) before performing the first probe, and then perform the probe every 10 seconds (`periodSeconds`); if the probe fails 3 times (default `failureThreshold`) the container is restarted. 
   
 ```cmd
 livenessProbe:
@@ -530,9 +573,9 @@ livenessProbe:
     path: /actuator/health
     port: 8080
   initialDelaySeconds: 15
-  periodSeconds: 30
+  periodSeconds: 10
 ```
-Get `initialDelaySeconds` wrong and the container may never start, forever been killed and restarted before it gets a chance to start! As such, it should be set to be greater than the maximum initialisation time. There's also a probe `timeoutSeconds` which defaults to 1 second, its worth considering a small increase in response time due to temporary increase in load could result in the container being restarted.  
+Get `initialDelaySeconds` wrong and the container may never start, forever been killed and restarted before it gets a chance to start! As such, it should be set to be greater than the maximum initialisation time. There's also a probe `timeoutSeconds` which defaults to 1 second, it's worth considering a small increase in response time due to temporary increase in load could result in the container being restarted.  
 
 A pod's [`restartPolicy`](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy) determines what to do if a probe fails - if set to `Always` (the default) or `OnFailure`, the container will be killed and restarted if the probe fails (the other policy is `Never`)
 
@@ -547,7 +590,7 @@ After applying the patch the pod will be restarted, check the patched deployment
 ```cmd
 $ kubectl get deployment mood-service --output yaml
 ``` 
-(in practice you'd now get those changes back into version controlled deployment YAML) 
+(in practice you'd now get those changes back into version controlled deployment YAML - we've added them to the `master` branch) 
 
 Lets check things are running as expected
 ```cmd
@@ -562,76 +605,84 @@ Look for the `Events` section, if the probe failed you'll see something like bel
 ```
 ..in this example probe has failed x3 times, which would have triggered a restart of the container.
 
-TODO: from here.
-TODO: Need another tag and get below changes onto master 
-
 ## Concurrency  
 [Scale out via the process model](https://12factor.net/concurrency) (12 factor)
 
-Adding more concurrency is a case of spinning up a new process - horizontal scaling.
-
-Different processes can be assigned a type - HTTP requests may be handled by a web process, and long-running background tasks handled by a worker process, and different types of process can be scaled differently - e.g. you may have three load balanced web processes and ten worker processes.
-
-Back to our app, we want to be able to scale it out, but how? Containers and container orchestration is the answer (again).
-
-zzz
-The Kubernetes control plane has the ability to scale applications based on their resource utilisation - as pods become busier, it can automatically bring up new replicas (a clone of a pod) to share the load.
-
-We already made a reference to the pod replica count 
-`replicas`
+Adding more concurrency with Kubernetes is a relatively simple case of spinning up a new process - _horizontal scaling_. Scaling will increase the number of Pods to the new desired state, with traffic distributed to the multiple application instances through the Service (which has an integrated load-balancer).
+ 
+The level of scaling is specified in the [Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) with the replica count (`replicas`), the [mood-service](docker/mood-app.yaml) has a count of 1 - only one instance of the application process will be running at any particular point in time:
 ```cmd
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mood-redis
+  name: mood-service
 spec:
   replicas: 1
 ``` 
-zzz 
-
-
-Right now we just have one mood-service pod running (`replicas: 1`):  
+...there is just 1 `READY` and 1 `AVAILABLE` pod:  
 ```cmd
 $ kubectl get deployment mood-service
 NAME           READY   UP-TO-DATE   AVAILABLE   AGE
 mood-service   1/1     1            1           24h
-
 ```
-There is 1 READY & AVAILABLE pod.
-
-This can be manually increased:
+Lets manually increase the replica count to 3:
 ```cmd
-
+$ kubectl scale deployment mood-service --replicas=3
+```
+...we now have 3 `READY` and `AVAILABLE` pods:  
+```cmd
+kubectl get deployment mood-service
+NAME           READY   UP-TO-DATE   AVAILABLE   AGE
+mood-service   3/3     3            3           24h
 ```
 
 There are a lot of good reasons for having a replica count > 1:
-* Load balancing - Kubernetes can distribute the load between the replicas (this is what the Service object is partly about)
-* High Availability - by adding a bit of redundancy, application availability has increased - e.g. if one of replica's stops responding, the others can continue to service requests  
+* Load balancing - Kubernetes can distribute the load between the replicas so it's less likely a particular instance becomes overwhelmed 
+* High Availability - by adding a bit of redundancy, application availability has increased - e.g. if we killed one of the containers again, there'd be no user impact as the other's would continue to service requests  
 * Ease of Update - allows [rolling updates](https://kubernetes.io/docs/tutorials/kubernetes-basics/update/update-intro/) and zero downtime
 
+(this is why it's set to 3 for the mood-service on the `master` branch)
+
+So we have a highly available mood-service but still only one instance of redis - and if it goes down, the application is unusable. Given redis is a type of cache, we can't just increase the replica count, since Kubernetes does not know now to handle cache coherence between the different instances. This [kubernetes article](https://kubernetes.io/docs/tutorials/stateless-application/guestbook/) explains how to add a redis master with a configurable number of slaves to provide high availability, and it's all done through a bit of YAML (it also address the problem of redis losing all of it's data after each container restart, through the use of a [persistent volumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/))
+
+One of the points made by the 12 factor on concurrency is that different types of process can be scaled differently - e.g. you might have a [web-queue-worker architecture](https://docs.microsoft.com/en-us/azure/architecture/guide/architecture-styles/web-queue-worker) that just needs a handful of web front-end processes (since they don't do much) but many worker processes (since they are longer running). Kubernetes fully supports this, just have each component in it's own deployment and set the appropriate `replicas`.  
+
 ### Horizontal Autoscaling 
-Kubernetes [Horizontal Pod Autoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+The Kubernetes [Horizontal Pod Autoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) can automatically scale applications based on their resource utilisation - as pods become busier, it can automatically bring up new replicas (a clone of a pod) to share the load.
+
+The following command will instruct kubernetes to run anything between 1 and 5 Pod replicas (i.e. application process') to maintain  an average CPU utilization across all Pods of 50%: 
 
 ```cmd
 $ kubectl autoscale deployment mood-service --cpu-percent=50 --min=1 --max=5
 ``` 
-
+The command has actually created a new object, a `HorizontalPodAutoscaler`, to view it's config:
 ```cmd
-$ kubectl run -i --tty load-generator --image=busybox /bin/sh  
-Hit enter for command prompt  
-$ while true; do wget -q -O- http://localhost:30001/mood/user/anon; done
+$ kubectl get hpa -o yaml
+...
+ spec:
+    maxReplicas: 5
+    minReplicas: 1
+    scaleTargetRef:
+      apiVersion: extensions/v1beta1
+      kind: Deployment
+      name: mood-service
+    targetCPUUtilizationPercentage: 50
+    ...
+```
+You can try and simulate heavy load and observe the pod get scaled up via:
+```cmd
+$ while true; do curl http://localhost:8080/mood/user/anon; done
 ```
 
- 
 Check out this nice [autoscaling blog](https://kubernetes.io/blog/2016/07/autoscaling-in-kubernetes/) for a bit more info.
  
 ## Config and Kubernetes
 You may not have noticed but the Kubernetes instance of the service had a different default message:
 ```cmd 
-$ curl http://localhost:30001/mood/user/anon
+$ curl http://localhost:8080/mood/user/anon
 {... "status":404, "message":"default for Kubernetes"}
 ```
-It's been set in the Kubernetes config via a [container environment variable](https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/): 
+It's been set in the Kubernetes config ([mood-app.yaml](docker/mood-app.yaml)) via a [container environment variable](https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/): 
 ```cmd
 containers:
   - name: mood-service
@@ -640,10 +691,10 @@ containers:
       - name: mood_not_found_message
         value: "default for Kubernetes"
 ```
-This is fine, although the value is hard coded in the version controlled YAML and can't be changed at runtime.
+This is fine, although the value is hard coded in the version controlled YAML, to change it, you have to edit the deployment config, but what if we wanted different values for different deployments? 
 
-A Kubernetes [ConfigMap](https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/) provides an alternative approach to application configuration that still maintains the separate of application code from configuration. The ConfigMap object is just a set of key-value pairs the can be consumed by a pod.
-
+This is where a [ConfigMap](https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/) can help, by providing a place to store configuration that can be referenced back in the deployment config. A ConfigMap object is just a set of key-value pairs, and different deployments can be configured to use different config maps, it's a really nice separation of concerns. 
+ 
 Lets create a ConfigMap to store our representative application config:
 ```cmd
 $ kubectl create configmap mood-service-config --from-literal=message="default for ConfigMaps"
@@ -652,11 +703,11 @@ This can be viewed in the web dashboard or via:
 ```cmd
 $ kubectl describe configmap
 ```
-Now get an alternative version of the deployment config, its on a different git branch:
+Now get an alternative version of the deployment config, it's on a different git branch:
 ```cmd
 git checkout config-map-container-env-variable
 ```
-The only difference is how the env variable is sourced into the container, its quite descriptive, we're setting the `mood_not_found_message` env variable using a `valueFrom` the `configMapKeyRef`, where the name of the ConfigMap is `mood-service-config`, and the key is `message`:  
+The only difference is how the env variable is sourced into the container, it's quite descriptive, we're setting the `mood_not_found_message` env variable using a `valueFrom` the `configMapKeyRef`, where the name of the ConfigMap is `mood-service-config`, and the key is `message`:  
 ```cmd
 env:
   - name: mood_not_found_message
@@ -665,9 +716,16 @@ env:
         name: mood-service-config
         key: message
 ``` 
+([mood-app.yaml](docker/mood-app.yaml))
+
+Restart the instance:
+```cmd
+$ kubectl delete -f mood-app.yaml 
+$ kubectl apply -f mood-app.yaml 
+```
 ...and test:
 ```cmd 
-$ curl http://localhost:30001/mood/user/anon
+$ curl http://localhost:8080/mood/user/anon
 {... "status":404, "message":"default for ConfigMaps"}
 ```
 
@@ -675,7 +733,7 @@ ConfigMaps could be generated on the fly (e.g. using `kubectl`) as part of a rel
 ```cmd
 kubectl get configmap mood-service-config -o yaml
 ``` 
-..although this has a bunch of stuff you don't want to version control (like creationTimestamp), the YAML is easy enough to hand craft though:
+..although this has a bunch of stuff you don't want to version control (like creationTimestamp), the YAML is easy enough to hand craft:
 
 ```cmd
 apiVersion: v1
@@ -687,6 +745,13 @@ metadata:
   namespace: default
 ```  
 ..and create using `kubectl create -f <config.yaml>`
+
+## Tear down
+At this point you're done with local kubernetes, so tear down:
+
+```cmd
+$ kubectl delete -f mood-app.yaml
+``` 
 
 # Deploying to Red Hat OpenShift
 Sign up for free [here](https://www.openshift.com/products/online/) to get:
@@ -752,76 +817,57 @@ There's a nice 'topology view' you can toggle to by clicking icon in top right h
 So lets test the application, grab the public route (you can click on the ![Route](/images/route.png) icon to obtain) and test:
 ```cmd
 $ export ROUTE=http://mood-service-mood-board.apps.us-east-1.starter.openshift-online.com 
-$ curl -X PUT -H "Content-Type: text/plain" -d "happy with Openshift" ${ROUTE}/mood/user/stehrn 
+$ curl -X PUT -H "Content-Type: text/plain" -d "happy with OpenShift" ${ROUTE}/mood/user/stehrn 
 $ curl ${ROUTE}/mood/user/stehrn
-{"user":"stehrn","mood":"happy with Openshift"}
+{"user":"stehrn","mood":"happy with OpenShift"}
 ```
 Now is the time to spend some time in the UI clicking about to see what features are available and reading the (very good) [OpenShift documentation](https://docs.openshift.com/online/).
 
 # Wrap up
-A lot has been covered. 
+A lot has been covered, here's a summary of the key points: 
 
-Not all of the 12 factors we're touched on.
+## 12 factor best practice
+
+### Codebase
+* Use [feature branches](https://martinfowler.com/bliki/FeatureBranch.html) to support different versions of an app in the same repo
+* Refactor out shared code into a new repo and reference it in original repo as a library dependency using a dependency management framework
+* Application topology (deployments, config etc) can be version controlled to avoid environment creep
+
+### Dependencies
+* Use a dependency management framework like maven to explicitly declare dependencies
+* Use [Docker](https://www.docker.com) containers to add any runtime application dependencies not included during build step (e.g. ‘provided’ scoped dependencies).
+* Container images are fully self-contained deployment units, they make no assumptions about the underlying hosts the containers will run on - use them to ensure all required types of dependency are available at runtime, including system libraries like the Java runtime (JDK)
+* An orchestration framework like [Kubernetes](https://kubernetes.io) lets you define runtime dependencies to other services (containers). For example, if service A is dependent on service B, this can be defined in config and Kubernetes will ensure the services are spun up and connected to each other as necessary (the assumption here is you’re responsible for the deployment of both services).
  
-## (Factor 5) Build, release, run - strictly separate stages
+### Config
+* Use environment variables to change application configuration, enabling deployment of same version of binaries to differently configured environments
+* Consider using a Kubernetes [ConfigMap](https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/) to store config that can be injected into the container environment through the Deployment definition.
+
+### Process and state
+* Decompose application code into stateless services - put any application state into a backing service, redis is a good choice for a simple caching framework 
+* Encapsulate functionality into Kubernetes pods which lend themselves well to stateless code (processes) running inside containers
+* Use Kubernetes [requests and limits](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits) to ensure a process has enough resources to run
+* Leverage Kubernets control plane to ensure failed processes are automatically restarted
+* Use Kubernetes [liveness and readiness](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) probes to help Kubernets figure out if processes are ok, and restart if necessary. 
+
+### Backing service
+* A distributed cache like [redis](https://redis.io) can help remove state from a service.
+* Use environment variables or a ConfigMap to easily configure the service 
+* Consider a [multi-node](https://www.redhat.com/en/topics/cloud-native-apps/introduction-to-kubernetes-patterns) pattern to address concerns around reliability and scalability, for example, it's much easier to scale the backing service container independently when it's not part of the same deployment as the service using it. 
+
+### Port binding
+* Every Pod can be accesses through a Service, which can be further exposed to a public facing hostname and port through an OpenShift [Route](https://docs.openshift.com/container-platform/3.10/dev_guide/routes.html) 
+* At a lower level, use Docker container `—publish` (`-p`) [command line](https://docs.docker.com/engine/reference/commandline/run/#publish-or-expose-port--p---expose) to bind a container port to the host port; use `--expose` (`-e`) over publish if possible for greater security
+
+### Orchestration and process execution
+* Use Kubernetes to define memory and CPU requirements of a container to ensure reliable execution, this includes settings limits to ensure a badly behaved process does not impact others.
+
+## Other factors
+Not all of the 12 factors we're touched on, e.g.:
  
- 
-xxx
+* Build, release, run ([Strictly separate build and run stages](https://12factor.net/build-release-run)) would take us into the world of deployment pipelines
+* Disposability ([Maximize robustness with fast startup and graceful shutdown](https://12factor.net/disposability)) GraavlVM - [graalvm](https://www.graalvm.org) is worth a look, it can take a bloated Spring Boot fat jar and compile it into a small self-contained native binary leading to much faster container start times 
 
 
 
-## References
-* https://www.ionos.com/community/hosting/redis/using-redis-in-docker-containers/
-* https://docs.spring.io/spring-data/data-redis/docs/current/reference/html/#reference
-* https://www.contino.io/insights/building-a-twelve-factor-application-part-one
-* https://www.docker.com/blog/designing-your-first-application-kubernetes-part1/
-
-
-
-
-
-
-XXX
-
-So we have a highly available service but only one instance of redis - and if it goes down, the service is unusable. The [kubernetes article](https://kubernetes.io/docs/tutorials/stateless-application/guestbook/) explains how to add a redis master with a configurable number of slaves to provide high availability, and it's done through a bit of YAML. 
-
-
-
-Good link
-https://learnk8s.io/spring-boot-kubernetes-guide
-
-
-And tidy up by tearing down the application:
-```cmd
-$ kubectl delete -f mood-app.yaml
-```  
-
-https://helm.sh
-
-
- then on full-blown public cloud ([Azure](https://azure.microsoft.com/en-gb/)).
- 
- 
- 
-Graalvm 
-https://blog.softwaremill.com/small-fast-docker-images-using-graalvms-native-image-99c0bc92e70b
- 
-
-Openshift
-https://console-openshift-console.apps.us-east-1.starter.openshift-online.com/k8s/cluster/projects
-
-TODO
-Do tests work? 
-
-
-
-
-Whats not been covered
-* Storage
-Containers should be considered to be short lived, and that their filesystems will be destroyed with no warning. 
-This means the data redis has stored will be lost of the container restarts. 
-To fix this, storage external to the container can be defined through the use of a persistentVolumes [LINK].
-
-
-
-
+Thanks for reading!
