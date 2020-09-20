@@ -448,7 +448,7 @@ $ kubectl logs -l app=service --follow
 ```
 (change `-l` to `app=redis` to tail redis logs)
 
-Once again test the service (note different port):
+Once again test the service:
 ```cmd 
 $ curl -X PUT -H "Content-Type: text/plain" -d "happy with Kubernetes" http://localhost:8080/mood/user/stehrn 
 $ curl http://localhost:8080/mood/user/stehrn
@@ -468,7 +468,7 @@ Open via [localhost link](http://localhost:8001/api/v1/namespaces/kubernetes-das
 ```cmd
 $ kubectl -n kube-system describe secret default
 ```
-..and you should see 
+..and you should see:
 
 ![Dashboard](/images/k8_dashboard.png)
 
@@ -631,7 +631,7 @@ $ kubectl scale deployment mood-service --replicas=3
 ```
 ...we now have 3 `READY` and `AVAILABLE` pods:  
 ```cmd
-kubectl get deployment mood-service
+$ kubectl get deployment mood-service
 NAME           READY   UP-TO-DATE   AVAILABLE   AGE
 mood-service   3/3     3            3           24h
 ```
